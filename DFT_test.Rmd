@@ -1,0 +1,346 @@
+---
+title: "DFT test"
+author: "Ioann Stanković"
+date: "2023-11-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+Creating the first proposed [DFT](https://arxiv.org/pdf/1701.01960.pdf) algorithm, and trying to determine if the binary sequence is truly random.
+
+## Discrete Fourier Transform Test
+
+procedure of the proposed DFT test:
+
+1)
+
+- We generate a random binary sequence with the built in binomial distribution function.
+
+```{r}
+set.seed(11)
+
+k = 100
+
+E <- rbinom(k, size = 1, prob = 0.5)
+
+print(E[1:20])
+```
+
+- We convert the values in sequence E to -1 and +1 and we create sequence X. 
+
+```{r}
+X <- E*2-1
+
+print(X[1:20])
+```
+
+2)
+
+- We apply a discrete Fourier transform (DFT) to \(X\) to produce Fourier coefficients \( \{ S_j (X) \}^{n-1}_{j=0} \). The Fourier coefficients \( S_j (X) \) are defined as follows:
+
+\[ S_j (X) = \sum^{n-1}_{k=0}x_k \cos(\frac{2\pi k j}{n}) - \sqrt{-1}\sum^{n-1}_{k=0}x_k\sin(\frac{2\pi k j}{n}), \] where its real and imaginary parts \( c_k \) and \( s_k \) are:
+
+\[ c_k = \sum^{n-1}_{k=0}x_k \cos(\frac{2\pi k j}{n}) \]
+
+\[ s_k = \sum^{n-1}_{k=0}x_k\sin(\frac{2\pi k j}{n}) \]
+
+```{r}
+v <- 0:(k-1)
+
+j <- 0:(k-1)
+
+c_values <- numeric(k)
+s_values <- numeric(k)
+
+for (j in 0:(k-1)) {
+  c_values[j + 1] <- sum(cos(2 * pi * v * j / k) * E)
+}
+
+print(c_values[1:10])
+
+for (j in 0:(k-1)) {
+  s_values[j + 1] <- sum(sin(2 * pi * v * j / k) * E)
+}
+
+print(s_values[1:10])
+
+S <- c_values-sqrt(-1 + 0i)*s_values
+
+print(S[1:10])
+```
+
+3) 
+
+- We compute \(\{|S_j(X)|\}^{\frac{n}{2}-1}_{j=0}\), where \[ |S_j(X)|^2 = (c_j(X))^2 + (s_j(X))^2 .\]
+
+Because \(|S_j(X)| = |S_{n-j}(X)|, \) \(\{|S_j(X)|\}^{n-1}_{j=\frac{n}{2}}\)
+
+```{r}
+
+S_abs <- sqrt(c_values^2+s_values^2)
+
+S_disc <- S_abs[1:(k/2-1)]
+
+```
+
+4) This part deviates from the changed algorithm
+
+- We compute the threshold value \( T_{0.95} = \sqrt{3n}. \) The 95% values \(\{|S_j(X)|\}^{\frac{n}{2}-1}_{j=0}\) are supposed to be \( < T_{0.95} \). Lets mention that the value \( \sqrt{3n} \) was reported as an incorrect value by several researchers, so lets use the value \( \sqrt{-n\ln{0.05}} \) as it is more accurate.
+
+```{r}
+
+T <- sqrt(-k*log(0.05))
+
+```
+
+5)
+
+- We count the value \[ N_1 = \# \{ |S_j(X)| \ | \ |S_j(X)< T_{0.95}, 0 \leq j \leq \frac{n}{2}-1  \}.  \]
+
+N_1 can be considered to follow binomial distribution \( B(\frac{n}{2},0.95) \). So according to central limit theorem, when \( n \) is sufficiently large, the approximation to \( B(n,p) \) is given by the normal distribution \( N(np, np(1-p)) \). Therefore, when \( n \) is sufficiently large, under the assumption of randomness,
+
+\[ N_1 ~ N(0.95 \frac{n}{2}, (0.95)(0.05)\frac{n}{2}. \]
+
+```{r}
+
+N <- sum(S_disc < T)
+
+```
+
+6)
+
+- We copmute a test statistic
+
+\[ d = \frac{N_1 - 0.95\frac{n}{2}}{\sqrt{(0.95)(0.05)\frac{n}{2}}}. \]
+
+When \(n\) is sufficiently large, under the assumption of randomness, the test statistic \(d\) can be considered to follow \(N(0,1)\).
+
+```{r}
+
+d <- (N- 0.95* k/2)/(sqrt(0.95*0.05*k/2))
+
+```
+
+7)
+
+- We compute the P-value : \(p = erfc(\frac{|d|}{\sqrt{2}}). \)
+
+If \(p < \alpha \), then we conclude that the sequence is non-random, where \(\alpha \) is a significance level of the DFT test. NIST recommends \(\alpha = 0.01 \). 
+
+If \(p \geq \alpha \), we conclude that the sequence is random.
+
+```{r, warning=FALSE}
+library(pracma) #We have to install package (install.packages("pracma"))
+
+p <- erfc(d / sqrt(2))
+
+alpha <- 0.01
+
+p >= alpha
+
+```
+
+8) 
+
+- We perform 1) to 7) for \( m \) sample sequences \( \{ X_1,X_2, \dots, X_m \} \); \( m \) P-values \( \{ p_1, p_2, \dots, p_m \} \)
+
+8): 
+
+
+We create a list of sequences
+```{r}
+set.seed(11) #So we can compare the first element of the list with the previous example
+
+k <- 100
+
+m <- 10
+
+E_m <- list()
+
+for (i in 1:m) {
+  E_m[[i]] <- rbinom(k, size = 1, prob = 0.5)
+}
+
+
+```
+
+1) -1/+1 transformation
+
+```{r}
+
+X_m <- list()
+
+for (i in seq_along(E_m)) {
+  X_m[[i]] <- 2 * E_m[[i]] - 1
+}
+
+```
+
+2) Applying DFT to \( X_j,\)  where \( j=1,2, \dots, m \) 
+
+```{r}
+c_values_m <- vector("list", length = m)
+s_values_m <- vector("list", length = m)
+
+for (i in seq_along(E_m)) {
+  c_values_m[[i]] <- numeric(k)  
+  s_values_m[[i]] <- numeric(k)  
+
+  for (j in 0:(k-1)) {
+    c_values_m[[i]][j + 1] <- sum(cos(2 * pi * v * j / k) * E_m[[i]])
+    s_values_m[[i]][j + 1] <- sum(sin(2 * pi * v * j / k) * E_m[[i]])
+  }
+}
+
+
+```
+
+3) We compute \( \{ | S_j(X) | \}^{\frac{n}{2}-1}_{j = 0} \)
+
+```{r}
+
+S_abs_m <- vector("list", length = m)
+
+S_abs_m <- Map(function(c, s) sqrt(c^2 + s^2), c_values_m, s_values_m)
+
+S_disc_m <- lapply(S_abs_m, function(x) x[1:(k/2 - 1)])
+
+```
+
+4) We compute the value \( T. \)
+
+```{r}
+
+T <- sqrt(-k*log(0.05))
+
+```
+
+5) We count \( N_m \)
+
+```{r}
+
+N_m <- lapply(S_disc_m, function(x) sum(x < T))
+
+```
+
+6) We compute a test statistic
+
+```{r}
+
+d_m <- lapply(N_m, function(N) (N - 0.95 * k / 2) / sqrt(0.95 * 0.05 * k / 2))
+
+```
+
+7) We compute \(m \) P-values:
+
+```{r}
+
+p_m <- lapply(d_m, function(inner_list) {
+  lapply(inner_list, function(x) erfc(x / sqrt(2)))
+})
+
+alpha <- 0.01
+
+m_p <- sum(unlist(p_m) >= alpha)
+```
+
+9) Second-level test A): Proportion of sequences passing a test
+
+- We count the number of sample sequences for which P-value \( \geq \alpha \) and define it as \( m_p \). Then, under the assumption of randomness, \( m_p \) follows \( B(m, 1-\alpha) \), which approximates \( N(m(1-\alpha),m\alpha(1-\alpha)) \) when \( m \) is sufficiently large. Therefore, the proportion of sequences passing a test \( (=\frac{m_p}{m}) \) approximately follows \( N((1-\alpha), \frac{\alpha(1-\alpha)}{m}) \). The range of acceptable \( \frac{m_p}{m} \) is determined with the significance interval:
+
+\[ 1-\alpha - 3 \sqrt{\frac{\alpha(1-\alpha)}{m}} < \frac{m_p}{m} < 1-\alpha + 3 \sqrt{\frac{\alpha(1-\alpha)}{m}} .\]
+
+If the proportion falls outsidee of this interval, there is evidence that the data are non-random.
+
+```{r}
+L <- 1 - alpha - 3* sqrt(alpha*(1-alpha)/m)
+
+R <- 1 - alpha + 3* sqrt(alpha*(1-alpha)/m)
+
+L <= m_p/m & m_p/m <= R
+
+
+```
+
+
+10) Second-level test B): Uniform distribution of P-values
+
+## DFT
+
+Lastly creating a function that directly returns \(m\) P-values.
+
+The function takes a binary string of length \( mn \) and transforms it to \(n\) strings with \(m\) values. Returning TRUE/FALSE if the \( \frac{m_p}{m} \) falls in the above given confidence interval. 
+
+```{r, warning=FALSE}
+library(pracma)
+
+string <- rbinom(1000, size = 1, prob = 0.5)
+
+n <- 100
+
+m <- 10
+
+DFT <- function(string, n, m) {
+  if (n * m != length(string)) {
+    string = string[1:n*m]
+  }
+  E_m <- split(string, ceiling(seq_along(string) / n))
+  
+  
+  X_m <- list()
+
+  for (i in seq_along(E_m)) {
+  X_m[[i]] <- 2 * E_m[[i]] - 1
+  }
+  c_values_m <- vector("list", length = m)
+  s_values_m <- vector("list", length = m)
+  
+  v <- 0:(m-1)
+
+  for (i in seq_along(E_m)) {
+    c_values_m[[i]] <- numeric(m)  
+    s_values_m[[i]] <- numeric(m)  
+    
+  
+  
+    for (j in 0:(m-1)) {
+      c_values_m[[i]][j + 1] <- sum(cos(2 * pi * v * j / m) * E_m[[i]])
+      s_values_m[[i]][j + 1] <- sum(sin(2 * pi * v * j / m) * E_m[[i]])
+    }
+  }
+  S_abs_m <- vector("list", length = m)
+
+  S_abs_m <- Map(function(c, s) sqrt(c^2 + s^2), c_values_m, s_values_m)
+
+  S_disc_m <- lapply(S_abs_m, function(x) x[1:(m/2 - 1)])
+
+  T <- sqrt(-n*m*log(0.05))
+  
+  N_m <- lapply(S_disc_m, function(x) sum(x < T))
+  
+  d_m <- lapply(N_m, function(N) (N - 0.95 * m / 2) / sqrt(0.95 * 0.05 * m / 2))
+  
+  p_m <- lapply(d_m, function(inner_list) {
+    lapply(inner_list, function(x) erfc(x / sqrt(2)))
+  })
+
+  alpha <- 0.01
+
+  m_p <- sum(unlist(p_m) >= alpha)
+  
+  L <- 1 - alpha - 3* sqrt(alpha*(1-alpha)/m)
+
+  R <- 1 - alpha + 3* sqrt(alpha*(1-alpha)/m)
+
+  return(L <= m_p/m & m_p/m <= R)
+}
+
+
+```
+
+
